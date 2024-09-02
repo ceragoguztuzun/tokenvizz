@@ -1,0 +1,101 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Interactive Graph Visualization Tool</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet" type="text/css" />
+        <style>
+            #mynetwork {
+                width: 600px;
+                height: 400px;
+                border: 1px solid lightgray;
+            }
+            .control-panel {
+                margin-top: 20px;
+            }
+            #node-info {
+                margin-top: 20px;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Interactive Graph Visualization Tool</h1>
+        <div class="control-panel">
+            <label for="weight-slider">Edge Weight Threshold: </label>
+            <input type="range" id="weight-slider" min="0" max="0.30486584" step="0.001" value="0">
+            <span id="slider-value">0</span>
+        </div>
+        <div id="mynetwork"></div>
+        <div id="node-info"></div>
+
+        <script>
+            var nodes = new vis.DataSet([{"id": 0, "label": "A", "position": "0-1"}, {"id": 1, "label": "GCTTA", "position": "1-6"}, {"id": 2, "label": "GCTA", "position": "2-6"}, {"id": 3, "label": "GCTA", "position": "3-7"}, {"id": 4, "label": "GCTGA", "position": "4-9"}, {"id": 5, "label": "CT", "position": "5-7"}]);
+            var edges = new vis.DataSet([{"from": 0, "to": 1, "label": "0.305", "weight": 0.30486584}, {"from": 0, "to": 2, "label": "0.187", "weight": 0.18741572}, {"from": 0, "to": 3, "label": "0.119", "weight": 0.11908629}, {"from": 0, "to": 4, "label": "0.092", "weight": 0.09191545}, {"from": 0, "to": 5, "label": "0.101", "weight": 0.1012267}, {"from": 1, "to": 2, "label": "0.216", "weight": 0.21566181}, {"from": 1, "to": 3, "label": "0.141", "weight": 0.14147946}, {"from": 1, "to": 4, "label": "0.107", "weight": 0.10689311}, {"from": 1, "to": 5, "label": "0.108", "weight": 0.10828577}, {"from": 2, "to": 3, "label": "0.288", "weight": 0.28788823}, {"from": 2, "to": 4, "label": "0.143", "weight": 0.14343601}, {"from": 2, "to": 5, "label": "0.123", "weight": 0.12260079}, {"from": 3, "to": 4, "label": "0.164", "weight": 0.16437443}, {"from": 3, "to": 5, "label": "0.118", "weight": 0.118000805}, {"from": 4, "to": 5, "label": "0.155", "weight": 0.1553517}]);
+
+            var container = document.getElementById('mynetwork');
+            var data = {
+                nodes: nodes,
+                edges: edges
+            };
+            var options = {
+                nodes: {
+                    shape: 'box',
+                    font: {
+                        size: 18
+                    }
+                },
+                edges: {
+                    font: {
+                        size: 12
+                    }
+                },
+                physics: {
+                    stabilization: false,
+                    barnesHut: {
+                        gravitationalConstant: -2000,
+                        centralGravity: 0.3,
+                        springLength: 150,
+                        springConstant: 0.04,
+                        damping: 0.09,
+                        avoidOverlap: 0.1
+                    }
+                }
+            };
+            var network = new vis.Network(container, data, options);
+
+            function filterEdges(threshold) {
+                var filteredEdges = edges.get().filter(function(edge) {
+                    return edge.weight >= threshold;
+                });
+                network.setData({
+                    nodes: nodes,
+                    edges: filteredEdges
+                });
+            }
+
+            var slider = document.getElementById('weight-slider');
+            var sliderValue = document.getElementById('slider-value');
+            slider.max = 0.30486584;
+            slider.step = 0.30486584 / 1000;
+            slider.oninput = function() {
+                var value = parseFloat(this.value).toFixed(3);
+                sliderValue.innerHTML = value;
+                filterEdges(parseFloat(value));
+            }
+
+            // Add click event to show node position
+            network.on("click", function (params) {
+                if (params.nodes.length > 0) {
+                    var nodeId = params.nodes[0];
+                    var node = nodes.get(nodeId);
+                    document.getElementById('node-info').innerHTML = `Node: ${node.label}, Position: ${node.position}`;
+                }
+            });
+        </script>
+    </body>
+    </html>
+    
