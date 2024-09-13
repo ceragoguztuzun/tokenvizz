@@ -2,49 +2,40 @@ import json
 import csv
 
 def read_edges_from_csv(file_path):
-    """
-    Read edges from a CSV file.
-    
-    :param file_path: Path to the CSV file containing edge data
-    :return: List of tuples (source, target, weight) representing graph edges
-    """
     edges = []
     with open(file_path, 'r') as f:
         reader = csv.reader(f)
         for row in reader:
             source, target, weight = int(row[0]), int(row[1]), float(row[2])
+            print(f"Edge from {source} to {target} with weight {weight}")  # Debugging output
             edges.append((source, target, weight))
     return edges
 
 def read_node_info_from_json(file_path):
-    """
-    Read node information from a JSON file.
-    
-    :param file_path: Path to the JSON file containing node information
-    :return: Dictionary mapping node IDs to dictionaries containing 'string' and 'position'
-    """
     with open(file_path, 'r') as f:
-        return json.load(f)
+        node_info = json.load(f)
+        for node_id, info in node_info.items():
+            print(f"Node {node_id}: {info}")  # Debugging output
+        return node_info
 
-def generate_graph_visualization(edges_file, node_info_file, ref_dna, output_file='graph_visualization.html'):
+def generate_graph_visualization(edges_file, node_info_file, output_file='graph_vizzy.html'):
     """
     Generate an interactive graph visualization HTML file from edge data and node information files.
-    
+
     :param edges_file: Path to the CSV file containing edge data
     :param node_info_file: Path to the JSON file containing node information
-    :param ref_dna: Reference DNA sequence
     :param output_file: Name of the output HTML file
     """
     edges = read_edges_from_csv(edges_file)
     node_info = read_node_info_from_json(node_info_file)
-    
+
     # Prepare nodes and edges data
-    nodes = [{"id": i, "label": info['string'], "position": info['position']} for i, info in node_info.items()]
-    edges = [{"from": s, "to": t, "label": f"{w:.3f}", "weight": w} for s, t, w in edges]
-    
+    nodes = [{"id": int(i), "label": info['string'], "position": info['position']} for i, info in node_info.items()]
+    edges = [{"from": int(s), "to": int(t), "label": f"{w:.3f}", "weight": w} for s, t, w in edges]
+
     # Calculate max weight for slider
     max_weight = max(edge['weight'] for edge in edges)
-    
+
     # Create the HTML template using an f-string
     html_template = f'''
     <!DOCTYPE html>
@@ -60,7 +51,7 @@ def generate_graph_visualization(edges_file, node_info_file, ref_dna, output_fil
                 display: flex;
                 flex-direction: column;
                 align-items: center;
-                justify-content: center;
+                justify-content: flex-start;
                 height: 100vh;
                 margin: 0;
                 padding: 0;
@@ -81,13 +72,17 @@ def generate_graph_visualization(edges_file, node_info_file, ref_dna, output_fil
             }}
             #ref-dna {{
                 font-family: monospace;
-                font-size: 24px;
+                font-size: 18px;
                 margin-bottom: 20px;
-                letter-spacing: 5px;
+                letter-spacing: 2px;
                 white-space: nowrap;
                 overflow-x: auto;
                 padding: 10px;
                 text-align: center;
+                width: 90vw;
+                max-width: 90vw;
+                border: 1px solid #ccc;
+                box-sizing: border-box;
             }}
             .highlight {{
                 background-color: yellow;
@@ -104,7 +99,7 @@ def generate_graph_visualization(edges_file, node_info_file, ref_dna, output_fil
     </head>
     <body>
         <h1>DNA Tokenviz</h1>
-        <div id="ref-dna">{ref_dna}</div>
+        <div id="ref-dna"></div> <!-- Empty container for DNA segments -->
         <div class="control-panel">
             <label for="weight-slider">Edge Weight Threshold: </label>
             <input type="range" id="weight-slider" min="0" max="{max_weight}" step="0.001" value="0">
@@ -174,36 +169,34 @@ def generate_graph_visualization(edges_file, node_info_file, ref_dna, output_fil
             }}
 
             function highlightDNA(start, end) {{
-                var refDNA = document.getElementById('ref-dna');
-                var dnaText = refDNA.textContent;
-                var highlightedText = dnaText.substring(0, start) +
-                    '<span class="highlight">' + dnaText.substring(start, end) + '</span>' +
-                    dnaText.substring(end);
-                refDNA.innerHTML = highlightedText;
-                
-                // Center the highlighted area
-                var highlightedSpan = refDNA.querySelector('.highlight');
-                if (highlightedSpan) {{
-                    var containerWidth = refDNA.offsetWidth;
-                    var spanWidth = highlightedSpan.offsetWidth;
-                    var spanLeft = highlightedSpan.offsetLeft;
-                    var textWidth = refDNA.scrollWidth;
-                    
-                    // Calculate the left position to center the highlighted text
-                    var leftPosition = Math.max(0, spanLeft - (containerWidth / 2) + (spanWidth / 2));
-                    
-                    // Ensure the text doesn't scroll past its boundaries
-                    leftPosition = Math.min(leftPosition, textWidth - containerWidth);
-                    
-                    // Apply the scroll
-                    refDNA.scrollLeft = leftPosition;
-                    
-                    // Adjust vertical alignment if needed
-                    var containerHeight = refDNA.offsetHeight;
-                    var spanHeight = highlightedSpan.offsetHeight;
-                    var spanTop = highlightedSpan.offsetTop;
-                    refDNA.scrollTop = spanTop - (containerHeight / 2) + (spanHeight / 2);
-                }}
+                var segmentLength = 5000; // Number of bases to display before and after the highlight
+                var displayStart = Math.max(0, start - segmentLength);
+                var displayEnd = end + segmentLength;
+
+                // Fetch the DNA segment from the server
+                fetch(`http://localhost:5000/get_dna_segment?start=${{displayStart}}&end=${{displayEnd}}`)
+                    .then(response => response.text())
+                    .then(dnaSegment => {{
+                        var highlightStart = start - displayStart;
+                        var highlightEnd = end - displayStart;
+
+                        var highlightedText = dnaSegment.substring(0, highlightStart) +
+                            '<span class="highlight">' + dnaSegment.substring(highlightStart, highlightEnd) + '</span>' +
+                            dnaSegment.substring(highlightEnd);
+
+                        var refDNA = document.getElementById('ref-dna');
+                        refDNA.innerHTML = highlightedText;
+
+                        // Scroll to center the highlighted region
+                        var containerWidth = refDNA.offsetWidth;
+                        var totalLength = dnaSegment.length;
+                        var highlightCenter = (highlightStart + highlightEnd) / 2;
+                        var scrollPosition = (highlightCenter / totalLength) * refDNA.scrollWidth - containerWidth / 2;
+                        refDNA.scrollLeft = scrollPosition;
+                    }})
+                    .catch(error => {{
+                        console.error('Error fetching DNA segment:', error);
+                    }});
             }}
 
             function clickNode(nodeId) {{
@@ -264,16 +257,11 @@ def generate_graph_visualization(edges_file, node_info_file, ref_dna, output_fil
     # Write the HTML file
     with open(output_file, 'w') as f:
         f.write(html_template)
-    
+
     print(f"Graph visualization has been generated in '{output_file}'")
 
 # Example usage
 if __name__ == "__main__":
-    #ref_dna = "AGCTTAGCTAGCTAGCTGACT"
-    #read ref_dna from file
-    with open("ref_dna.txt", "r") as f:
-        ref_dna = f.read()
-        
     edges_file = "attention_graph_nothreshold.csv"
     node_info_file = "node_info.json"
-    generate_graph_visualization(edges_file, node_info_file, ref_dna)
+    generate_graph_visualization(edges_file, node_info_file, output_file='graph_vizzy.html')

@@ -9,6 +9,11 @@ from Bio import SeqIO
 import os
 from tqdm import tqdm
 import torch.multiprocessing as mp
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+
 
 def clean_gpu():
     torch.cuda.empty_cache()
@@ -17,26 +22,13 @@ def clean_gpu():
 def fasta_to_string(file_path):
     """
     Reads a .fa (FASTA) file and converts the sequence into a string.
-    
-    Parameters:
-    file_path (str): The path to the .fa file.
-
-    Returns:
-    str: The DNA or protein sequence as a string.
     """
-    # Open the FASTA file and parse the sequence
     with open(file_path, "r") as fasta_file:
-        # SeqIO.parse returns an iterator; we can get the first (and usually only) record
         records = list(SeqIO.parse(fasta_file, "fasta"))
-        
-        # Use tqdm to show progress
         for record in tqdm(records, desc="Processing FASTA file"):
-            # Convert the sequence object to a string
             sequence_str = str(record.seq)
             return sequence_str  # Return after processing the first record
-
-    return ""  # Return empty string if no records found
-
+    return ""
 
 def print_system_info():
     print(f'====================================')
@@ -54,19 +46,31 @@ def load_model_and_tokenizer(model_name, device):
     model = model.to(device)
     return model, tokenizer
 
-def tokenize_and_map(tokenizer, ref_dna, device):
-    tokenized = tokenizer(ref_dna, return_tensors='pt', return_offsets_mapping=True)
-    input_ids = tokenized["input_ids"].to(device)
-    offset_mapping = tokenized["offset_mapping"][0]
-    tokens = tokenizer.convert_ids_to_tokens(input_ids[0].cpu())
-    token_positions = [(token, start.item(), end.item()) for token, (start, end) in zip(tokens, offset_mapping) if token not in ["[CLS]", "[SEP]"]]
-    return input_ids, token_positions
+def tokenize_and_map(tokenizer, ref_dna, device, chunk_size=512):
+    """
+    Tokenizes the DNA sequence in chunks to prevent memory overload.
+    """
+    input_ids = []
+    token_positions = []
+    for i in range(0, len(ref_dna), chunk_size):
+        chunk = ref_dna[i:i+chunk_size]
+        tokenized_chunk = tokenizer(chunk, return_tensors='pt', return_offsets_mapping=True)
+        input_ids.append(tokenized_chunk["input_ids"].to(device))
+        offset_mapping = tokenized_chunk["offset_mapping"][0]
+        tokens = tokenizer.convert_ids_to_tokens(tokenized_chunk["input_ids"][0].cpu())
+        token_positions.extend([(token, start.item(), end.item()) for token, (start, end) in zip(tokens, offset_mapping) if token not in ["[CLS]", "[SEP]"]])
+
+    return torch.cat(input_ids, dim=1), token_positions
 
 def create_node_info(token_positions):
     return {i: {'string': token, 'position': f"{start}-{end}"} for i, (token, start, end) in enumerate(token_positions)}
 
-def run_model(model, input_ids):
+def run_model(model, input_ids, layer_num=-1):
+    """
+    Runs the model on the input IDs and retrieves attention weights for a specific layer or the last layer.
+    """
     outputs = model(input_ids=input_ids, return_dict=True, output_attentions=True)
+    
     if isinstance(outputs, tuple):
         attention_weights, last_hidden_states = outputs[-1], outputs[-2]
     else:
@@ -80,19 +84,31 @@ def calculate_attention_bounds(attention_weights):
 
 def create_graph(token_positions, attention_weights, threshold=0):
     G = nx.Graph()
+
+    # Add nodes to the graph based on token positions
     for i, (token, start, _) in enumerate(token_positions):
         G.add_node(i, label=token, start_position=start)
     
     initial_node_count = G.number_of_nodes()
-    
+
+    # Ensure the attention_weights are on the correct device (if they are not already)
     avg_attn_matrix = torch.mean(torch.cat([layer for layer in attention_weights], dim=1), dim=1)[0]
-    edge_indices = torch.triu_indices(avg_attn_matrix.size(0), avg_attn_matrix.size(1), offset=1)
-    edge_weights = avg_attn_matrix[edge_indices[0], edge_indices[1]]
     
+    # Move avg_attn_matrix to the correct device (optional, if needed)
+    avg_attn_matrix = avg_attn_matrix.to(attention_weights[0].device)
+
+    # Compute edge indices for the upper triangular part of the attention matrix
+    edge_indices = torch.triu_indices(avg_attn_matrix.size(0), avg_attn_matrix.size(1), offset=1).to(attention_weights[0].device)
+    
+    # Extract edge weights from the attention matrix using the edge indices
+    edge_weights = avg_attn_matrix[edge_indices[0], edge_indices[1]].to(attention_weights[0].device)
+    
+    # Mask out edges that have weights below the threshold
     mask = edge_weights >= threshold
     valid_edges = edge_indices[:, mask]
     valid_weights = edge_weights[mask]
-    
+
+    # Add edges to the graph, ensuring that nodes are within the initial node count
     for i, j, weight in zip(valid_edges[0], valid_edges[1], valid_weights):
         i, j = i.item(), j.item()
         if i < initial_node_count and j < initial_node_count:
@@ -100,9 +116,10 @@ def create_graph(token_positions, attention_weights, threshold=0):
                 G[i][j]['weight'] = max(G[i][j]['weight'], weight.item())
             else:
                 G.add_edge(i, j, weight=weight.item())
-    
+
     assert G.number_of_nodes() == initial_node_count
     return G
+
 
 def print_graph_statistics(G):
     print("\nGraph Statistics Report:")
@@ -125,30 +142,68 @@ def print_graph_statistics(G):
     print(f"Minimum degree: {min(degree_sequence)}")
     print("-------------------------")
 
-def process_on_gpu(gpu_id, model_name, ref_dna):
-    device = torch.device(f"cuda:{gpu_id}")
-    print(f"Processing on GPU {gpu_id}")
+class DNADataset(Dataset):
+    def __init__(self, ref_dna, chunk_size=512):
+        self.ref_dna = ref_dna
+        self.chunk_size = chunk_size
+
+    def __len__(self):
+        return (len(self.ref_dna) + self.chunk_size - 1) // self.chunk_size
+
+    def __getitem__(self, idx):
+        start = idx * self.chunk_size
+        end = start + self.chunk_size
+        return self.ref_dna[start:end]
+
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+
+def cleanup():
+    dist.destroy_process_group()
+
+def process_on_gpu(rank, world_size, model_name, ref_dna):
+    setup(rank, world_size)
+    
+    device = torch.device(f"cuda:{rank}")
+    print(f"Processing on GPU {rank}")
     
     model, tokenizer = load_model_and_tokenizer(model_name, device)
-    input_ids, token_positions = tokenize_and_map(tokenizer, ref_dna, device)
+    model = DDP(model, device_ids=[rank])
     
-    node_info = create_node_info(token_positions)
+    dataset = DNADataset(ref_dna)
+    sampler = torch.utils.data.distributed.DistributedSampler(dataset, num_replicas=world_size, rank=rank)
+    dataloader = DataLoader(dataset, batch_size=1, sampler=sampler)
     
-    try:
-        attention_weights, _ = run_model(model, input_ids)
-        min_weight, max_weight = calculate_attention_bounds(attention_weights)
-        print(f"GPU {gpu_id} - Min attention weight: {min_weight}")
-        print(f"GPU {gpu_id} - Max attention weight: {max_weight}")
+    G = nx.Graph()
+    node_info = {}
+    
+    for chunk in tqdm(dataloader, desc=f"GPU {rank} - Processing chunks", position=rank):
+        input_ids, token_positions = tokenize_and_map(tokenizer, chunk[0], device)
 
-        G = create_graph(token_positions, attention_weights)
-        print(f"GPU {gpu_id} - Graph created")
+        # Populate node_info with the desired format
+        for i, (token, start, end) in enumerate(token_positions):
+            node_info[i] = {
+                "string": token,  # The DNA string (token)
+                "position": f"{start}-{end}"  # Format the position as "start-end"
+            }
+
+        # Run the model and process attention weights
+        try:
+            attention_weights, _ = run_model(model.module, input_ids, layer_num=-1)
+            chunk_G = create_graph(token_positions, attention_weights)
+            G = nx.compose(G, chunk_G)
         
-        return G, node_info
-    
-    except RuntimeError as e:
-        print(f"GPU {gpu_id} - RuntimeError occurred: {e}")
-    except TypeError as e:
-        print(f"GPU {gpu_id} - TypeError occurred: {e}")
+        except RuntimeError as e:
+            print(f"GPU {rank} - RuntimeError occurred: {e}")
+        except TypeError as e:
+            print(f"GPU {rank} - TypeError occurred: {e}")
+
+    # Save results for this rank, including the populated node_info
+    torch.save((G, node_info), f'results_{rank}.pt')
+
+    cleanup()
 
 def main():
     print_system_info()
@@ -161,32 +216,30 @@ def main():
             ref_dna = f.read()
     else:
         ref_dna = fasta_to_string("/home/cxo147/ceRAG_viz/data/hg38.fa")
+        #ref_dna = 'ATGCGCGTGAG'
         with open("ref_dna.txt", "w") as f:
             f.write(ref_dna)
+    #'ATGCGATCGCTAGCTCGCGATCGATGATCGGAAGCTCTCTAGAGAGCTAGCTACCGCTAGCTACGACTAGCATCAGCTACGACTAG' #####
+    world_size = torch.cuda.device_count()
+    mp.spawn(process_on_gpu, args=(world_size, model_name, ref_dna), nprocs=world_size, join=True)
 
-    ref_dna = 'ATGCGTGA'
-    mp.set_start_method('spawn')
-    
-    clean_gpu()
-    with mp.Pool(processes=3) as pool:
-        results = pool.starmap(process_on_gpu, [(1, model_name, ref_dna), (2, model_name, ref_dna), (3, model_name, ref_dna)])
-
-    # Combine results from all GPUs
     combined_G = nx.Graph()
     combined_node_info = {}
-    
-    if results is None:
-        print("Error: Processing failed due to CUDA out of memory. No results were generated.")
-        return  # or sys.exit(1) if you want to terminate the script
 
-    for G, node_info in results:
-        if G is not None:
-            combined_G = nx.compose(combined_G, G)
-            combined_node_info.update(node_info)
+    for rank in range(world_size):
+        G, node_info = torch.load(f'results_{rank}.pt')
+        print(f"Rank {rank} - node_info: {node_info}")  # Debugging to check content
+        combined_G = nx.compose(combined_G, G)
+        combined_node_info.update(node_info)
+
+
+    for rank in range(world_size):
+        G, node_info = torch.load(f'results_{rank}.pt')
+        combined_G = nx.compose(combined_G, G)
+        combined_node_info.update(node_info)
 
     print_graph_statistics(combined_G)
 
-    # Save combined node_info to JSON file
     with open('node_info.json', 'w') as f:
         json.dump(combined_node_info, f)
     print("Combined node information saved to node_info.json")
