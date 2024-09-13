@@ -7,25 +7,15 @@ def read_edges_from_csv(file_path):
         reader = csv.reader(f)
         for row in reader:
             source, target, weight = int(row[0]), int(row[1]), float(row[2])
-            print(f"Edge from {source} to {target} with weight {weight}")  # Debugging output
             edges.append((source, target, weight))
     return edges
 
 def read_node_info_from_json(file_path):
     with open(file_path, 'r') as f:
         node_info = json.load(f)
-        for node_id, info in node_info.items():
-            print(f"Node {node_id}: {info}")  # Debugging output
-        return node_info
+    return node_info
 
 def generate_graph_visualization(edges_file, node_info_file, output_file='graph_vizzy.html'):
-    """
-    Generate an interactive graph visualization HTML file from edge data and node information files.
-
-    :param edges_file: Path to the CSV file containing edge data
-    :param node_info_file: Path to the JSON file containing node information
-    :param output_file: Name of the output HTML file
-    """
     edges = read_edges_from_csv(edges_file)
     node_info = read_node_info_from_json(node_info_file)
 
@@ -42,7 +32,6 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>DNA Tokenviz</title>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
         <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.css" rel="stylesheet" type="text/css" />
@@ -52,23 +41,8 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 flex-direction: column;
                 align-items: center;
                 justify-content: flex-start;
-                height: 100vh;
                 margin: 0;
                 padding: 0;
-            }}
-            #mynetwork {{
-                width: 90vw;
-                height: 70vh;
-                border: 1px solid lightgray;
-            }}
-            .control-panel {{
-                margin-top: 20px;
-                width: 90vw;
-                text-align: center;
-            }}
-            #node-info {{
-                margin-top: 20px;
-                font-weight: bold;
             }}
             #ref-dna {{
                 font-family: monospace;
@@ -87,6 +61,20 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
             .highlight {{
                 background-color: yellow;
             }}
+            #mynetwork {{
+                width: 90vw;
+                height: 70vh;
+                border: 1px solid lightgray;
+            }}
+            .control-panel {{
+                margin-top: 20px;
+                width: 90vw;
+                text-align: center;
+            }}
+            #node-info {{
+                margin-top: 20px;
+                font-weight: bold;
+            }}
             #search-bar {{
                 margin-top: 10px;
             }}
@@ -99,16 +87,19 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
     </head>
     <body>
         <h1>DNA Tokenviz</h1>
-        <div id="ref-dna"></div> <!-- Empty container for DNA segments -->
+        <div id="ref-dna"></div>
+
         <div class="control-panel">
             <label for="weight-slider">Edge Weight Threshold: </label>
             <input type="range" id="weight-slider" min="0" max="{max_weight}" step="0.001" value="0">
             <span id="slider-value">0</span>
         </div>
+
         <div id="search-bar">
             <input type="number" id="position-search" placeholder="Enter position">
             <button id="search-button">Search</button>
         </div>
+
         <div id="mynetwork"></div>
         <div id="node-info"></div>
         <button id="change-background">Galaxy Mode</button>
@@ -169,13 +160,19 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
             }}
 
             function highlightDNA(start, end) {{
-                var segmentLength = 5000; // Number of bases to display before and after the highlight
+                console.log(`highlightDNA-> Highlighting DNA from ${{start}} to ${{end}}`);
+                var segmentLength = 5000; // Adjust as needed
                 var displayStart = Math.max(0, start - segmentLength);
                 var displayEnd = end + segmentLength;
+                console.log(`highlightDNA-> displaying from ${{displayStart}} to ${{displayEnd}}`);
 
-                // Fetch the DNA segment from the server
-                fetch(`http://localhost:5000/get_dna_segment?start=${{displayStart}}&end=${{displayEnd}}`)
-                    .then(response => response.text())
+                fetch(`http://127.0.0.1:5000/get_dna_segment?start=${{displayStart}}&end=${{displayEnd}}`)
+                    .then(response => {{
+                        if (!response.ok) {{
+                            throw new Error(`Server error: ${{response.status}}`);
+                        }}
+                        return response.text();
+                    }})
                     .then(dnaSegment => {{
                         var highlightStart = start - displayStart;
                         var highlightEnd = end - displayStart;
@@ -187,7 +184,6 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                         var refDNA = document.getElementById('ref-dna');
                         refDNA.innerHTML = highlightedText;
 
-                        // Scroll to center the highlighted region
                         var containerWidth = refDNA.offsetWidth;
                         var totalLength = dnaSegment.length;
                         var highlightCenter = (highlightStart + highlightEnd) / 2;
@@ -196,13 +192,35 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                     }})
                     .catch(error => {{
                         console.error('Error fetching DNA segment:', error);
+                        var refDNA = document.getElementById('ref-dna');
+                        refDNA.innerHTML = 'Error loading DNA segment.';
                     }});
             }}
 
             function clickNode(nodeId) {{
                 var node = nodes.get(nodeId);
+                console.log('clickNode-> Node clicked:', node);
                 document.getElementById('node-info').innerHTML = `Node: ${{node.label}}, Position: ${{node.position}}`;
-                var [start, end] = node.position.split('-').map(Number);
+
+                var position = node.position;
+                console.log('clickNode-> Node position:', position);
+
+                if (!position || !position.includes('-')) {{
+                    console.error('Invalid node position:', position);
+                    return;
+                }}
+
+                var [startStr, endStr] = position.split('-').map(s => s.trim());
+                var start = Number(startStr);
+                var end = Number(endStr);
+
+                if (isNaN(start) || isNaN(end)) {{
+                    console.error('Invalid start or end positions:', start, end);
+                    return; // Exit the function if positions are invalid
+                }}
+
+                console.log('clickNode-> Parsed start:', start, 'Parsed end:', end);
+
                 highlightDNA(start, end);
                 network.focus(nodeId, {{
                     scale: 1.5,
@@ -214,7 +232,6 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 network.selectNodes([nodeId]);
             }}
 
-            // Add click event to show node position and highlight DNA
             network.on("click", function (params) {{
                 if (params.nodes.length > 0) {{
                     clickNode(params.nodes[0]);
@@ -249,6 +266,7 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                     alert('No node found at this position');
                 }}
             }});
+
         </script>
     </body>
     </html>
