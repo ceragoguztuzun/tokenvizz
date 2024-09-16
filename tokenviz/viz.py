@@ -91,8 +91,8 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
 
         <div class="control-panel">
             <label for="weight-slider">Edge Weight Threshold: </label>
-            <input type="range" id="weight-slider" min="0" max="{max_weight}" step="0.001" value="0">
-            <span id="slider-value">0</span>
+            <input type="range" id="weight-slider" min="0" max="{max_weight}" step="0.001" value="0.01">
+            <span id="slider-value">0.01</span>
         </div>
 
         <div id="search-bar">
@@ -161,7 +161,7 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
 
             function highlightDNA(start, end) {{
                 console.log(`highlightDNA-> Highlighting DNA from ${{start}} to ${{end}}`);
-                var segmentLength = 5000; // Adjust as needed
+                var segmentLength = 200; // Adjust as needed
                 var displayStart = Math.max(0, start - segmentLength);
                 var displayEnd = end + segmentLength;
                 console.log(`highlightDNA-> displaying from ${{displayStart}} to ${{displayEnd}}`);
@@ -281,5 +281,5 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
 # Example usage
 if __name__ == "__main__":
     edges_file = "attention_graph_nothreshold.csv"
-    node_info_file = "node_info.json"
+    node_info_file = "node_info_hg38_1.json"#"node_info.json"
     generate_graph_visualization(edges_file, node_info_file, output_file='graph_vizzy.html')
