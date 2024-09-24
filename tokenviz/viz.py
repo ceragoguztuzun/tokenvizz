@@ -281,5 +281,5 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
 # Example usage
 if __name__ == "__main__":
     edges_file = "attention_graph_nothreshold.csv"
-    node_info_file = "node_info_hg38_1.json"#"node_info.json"
+    node_info_file = "node_info_SMALL.json"#"node_info.json"
     generate_graph_visualization(edges_file, node_info_file, output_file='graph_vizzy.html')
