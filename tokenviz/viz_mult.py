@@ -36,7 +36,7 @@ def read_node_info_from_json(file_path):
         node_info = json.load(f)
     return node_info
 
-def generate_graph_visualization(edges_file, node_info_file, output_file='graph_vizzy.html'):
+def generate_graph_visualization(edges_file, node_info_file, output_file='graph_vizzy.html', default_weight=0.0):
     edges = read_edges_from_npz(edges_file)
     node_info = read_node_info_from_json(node_info_file)
 
@@ -53,7 +53,8 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
         nodes.append(node)
 
     edges = [{"from": int(s), "to": int(t), "label": f"{w:.3f}", "weight": w} for s, t, w in edges]
-
+    # Use default_weight for both minimum and default value of the slider
+    min_weight = default_weight
     max_weight = max(edge['weight'] for edge in edges) if edges else 0
 
     html_template = f'''
@@ -155,13 +156,12 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                     <select id="model-select">
                         <option value="DNABERT2">DNABERT2</option>
                         <option value="NT">NT</option>
-                        <option value="GeneBERT">GeneBERT</option>
                     </select>
                 </div>
                 <div class="control-item">
                     <label for="weight-slider">Edge Weight: </label>
-                    <input type="range" id="weight-slider" min="0" max="{max_weight}" step="0.001" value="0.01">
-                    <span id="slider-value">0.01</span>
+                    <input type="range" id="weight-slider" min="{min_weight}" max="{max_weight}" step="0.001" value="{default_weight}">
+                    <span id="slider-value">{default_weight:.3f}</span>
                 </div>
                 <div class="control-item">
                     <input type="number" id="position-search" placeholder="Enter position">
@@ -181,7 +181,39 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
         <button id="change-background">Galaxy Mode</button>
 
         <script>
-            var nodes = new vis.DataSet({json.dumps(nodes)});
+            function hexToRgba(hex, alpha) {{
+                var r = 0, g = 0, b = 0;
+
+                // Remove '#' if present
+                hex = hex.replace('#', '');
+
+                if (hex.length === 3) {{
+                    // 3-digit hex
+                    r = parseInt(hex[0] + hex[0], 16);
+                    g = parseInt(hex[1] + hex[1], 16);
+                    b = parseInt(hex[2] + hex[2], 16);
+                }} else if (hex.length === 6) {{
+                    // 6-digit hex
+                    r = parseInt(hex.substring(0, 2), 16);
+                    g = parseInt(hex.substring(2, 4), 16);
+                    b = parseInt(hex.substring(4, 6), 16);
+                }}
+
+                return `rgba(${{r}}, ${{g}}, ${{b}}, ${{alpha}})`;
+            }}
+
+            var rawNodes = {json.dumps(nodes)};
+
+            // Apply font color adjustment for dark-colored nodes
+            rawNodes.forEach(function (node) {{
+                if (isColorDark(node.color)) {{
+                    node.font = {{ color: '#ffffff' }}; // Set font color to white for dark nodes
+                }}
+            }});
+
+            var nodes = new vis.DataSet(rawNodes);
+
+
             var edges = new vis.DataSet({json.dumps(edges)});
 
             var container = document.getElementById('mynetwork');
@@ -248,7 +280,7 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 filterEdges(parseFloat(value));
             }}
 
-            function highlightDNA(start, end) {{
+            function highlightDNA(start, end, color) {{
                 console.log(`highlightDNA-> Pos DNA from ${{start}} to ${{end}}`);
                 var segmentLength = 200;
                 var displayStart = Math.max(0, start - segmentLength);
@@ -270,7 +302,10 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                         // Insert line breaks every 50 characters
                         var formattedDNA = dnaSegment.replace(/(.{{50}})/g, `$1\n`);
 
-                        var highlightedText = `${{formattedDNA.substring(0, highlightStart)}}<span class="highlight">${{formattedDNA.substring(highlightStart, highlightEnd + 1)}}</span>${{formattedDNA.substring(highlightEnd + 1)}}`;
+                        // Use the node's color with transparency
+                        var highlightStyle = `background-color: ${{hexToRgba(color, 0.5)}};`;
+
+                        var highlightedText = `${{formattedDNA.substring(0, highlightStart)}}<span class="highlight" style="${{highlightStyle}}">${{formattedDNA.substring(highlightStart, highlightEnd + 1)}}</span>${{formattedDNA.substring(highlightEnd + 1)}}`;
 
                         var refDNA = document.getElementById('ref-dna');
                         refDNA.innerHTML = highlightedText;
@@ -292,6 +327,33 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                     }});
             }}
 
+            function isColorDark(color) {{
+                var r, g, b;
+                if (color.startsWith('#')) {{
+                    // Convert hex to RGB
+                    var hex = color.substring(1);
+                    if (hex.length === 3) {{
+                        r = parseInt(hex[0] + hex[0], 16);
+                        g = parseInt(hex[1] + hex[1], 16);
+                        b = parseInt(hex[2] + hex[2], 16);
+                    }} else {{
+                        r = parseInt(hex.substring(0, 2), 16);
+                        g = parseInt(hex.substring(2, 4), 16);
+                        b = parseInt(hex.substring(4, 6), 16);
+                    }}
+                }} else {{
+                    return false; // Unsupported color format
+                }}
+                // Calculate brightness
+                var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                return brightness < 128; // Consider it dark if brightness is below 128
+                }}
+
+                nodes.forEach(function (node) {{
+                if (isColorDark(node.color)) {{
+                    node.font = {{ color: '#ffffff' }}; // Set font color to white for dark nodes
+                }}
+                }});
             
             function clickNode(nodeId) {{
                 var node = nodes.get(nodeId);
@@ -317,7 +379,9 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
 
                 console.log('clickNode-> Parsed start:', start, 'Parsed end:', end);
 
-                highlightDNA(start, end);
+                var nodeColor = node.color;
+                highlightDNA(start, end, nodeColor);
+
                 network.focus(nodeId, {{
                     scale: 1.5,
                     animation: {{
@@ -357,7 +421,7 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 if (foundNode) {{
                     clickNode(foundNode.id);
                 }} else {{
-                    alert('No node found at this position');
+                    alert('No node found at this position in the visualized graph.');
                 }}
             }});
 
@@ -385,4 +449,4 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
 if __name__ == "__main__":
     edges_file = "/usr/homes/cxo147/ceRAG_viz/tokenviz/outputs/adjacency_matrices/chr1_attention_graph.npz"
     node_info_file = "/usr/homes/cxo147/ceRAG_viz/tokenviz/outputs/node_info/chr1_node_info.json"
-    generate_graph_visualization(edges_file, node_info_file, output_file='graph_vizzy.html')
+    generate_graph_visualization(edges_file, node_info_file, output_file='graph_vizzy.html', default_weight=0.01)
