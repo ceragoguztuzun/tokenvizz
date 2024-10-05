@@ -123,6 +123,15 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
             .highlight {{
                 background-color: yellow;
             }}
+            .highlight {{
+                transition: all 0.3s ease-in-out;
+            }}
+            .highlight:hover {{
+                background-color: rgba(255, 255, 0, 0.6); /* Slightly lighter background color on hover */
+                box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.3); /* Add a subtle shadow to make it pop */
+                transform: scale(1.05); /* Slightly increase the size */
+                border-color: rgba(0, 0, 0, 0.8); /* Make the border a bit darker */
+            }}
             #mynetwork {{
                 width: 100%;
                 height: 80vh;
@@ -280,7 +289,7 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 filterEdges(parseFloat(value));
             }}
 
-            function highlightDNA(start, end, color) {{
+            function highlightDNA(start, end, color, connectedNodes) {{
                 console.log(`highlightDNA-> Pos DNA from ${{start}} to ${{end}}`);
                 var segmentLength = 200;
                 var displayStart = Math.max(0, start - segmentLength);
@@ -295,22 +304,64 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                         return response.text();
                     }})
                     .then(dnaSegment => {{
-                        var highlightStart = start - displayStart + 2; // Adjust to highlight correctly
-                        var highlightEnd = end - displayStart + 3;     // Adjust to include the full segment
-                        console.log(`highlightDNA-> Highlighted DNA from ${{highlightStart}} to ${{highlightEnd}}`);
-
-                        // Insert line breaks every 50 characters
                         var formattedDNA = dnaSegment.replace(/(.{{50}})/g, `$1\n`);
 
-                        // Use the node's color with transparency
-                        var highlightStyle = `background-color: ${{hexToRgba(color, 0.5)}};`;
+                        // Array to store all highlight information
+                        var highlights = [];
 
-                        var highlightedText = `${{formattedDNA.substring(0, highlightStart)}}<span class="highlight" style="${{highlightStyle}}">${{formattedDNA.substring(highlightStart, highlightEnd + 1)}}</span>${{formattedDNA.substring(highlightEnd + 1)}}`;
+                        // Add the clicked node's highlight
+                        var highlightStart = start - displayStart + 2; // Adjust to highlight correctly
+                        var highlightEnd = end - displayStart + 3;     // Adjust to include the full segment
+                        highlights.push({{
+                            start: highlightStart,
+                            end: highlightEnd,
+                            style: `background-color: ${{hexToRgba(color, 0.5)}}; border: 2px solid ${{hexToRgba(color, 0.7)}}; padding: 2px;`
+                        }});
 
+                        // Add highlights for connected nodes if they are within the displayed range
+                        connectedNodes.forEach(function(connectedNodeId) {{
+                            var connectedNode = nodes.get(connectedNodeId);
+                            var [connectedStartStr, connectedEndStr] = connectedNode.position.split('-').map(s => s.trim());
+                            var connectedStart = Number(connectedStartStr);
+                            var connectedEnd = Number(connectedEndStr);
+
+                            console.log('Checking if connected node is in range:', connectedStart, connectedEnd, 'within', displayStart, displayEnd);
+
+                            if (connectedStart >= displayStart && connectedEnd <= displayEnd) {{
+                                var connectedHighlightStart = connectedStart - displayStart + 2;
+                                var connectedHighlightEnd = connectedEnd - displayStart + 3;
+                                highlights.push({{
+                                    start: connectedHighlightStart,
+                                    end: connectedHighlightEnd,
+                                    style: `background-color: ${{hexToRgba(connectedNode.color, 0.3)}}; border: 2px solid ${{hexToRgba(connectedNode.color, 0.7)}}; padding: 2px;`
+                                }});
+
+                                console.log('Highlighting connected node:', connectedNode.label, 'from', connectedHighlightStart, 'to', connectedHighlightEnd);
+                            }}
+                        }});
+
+                        // Sort highlights by start index
+                        highlights.sort((a, b) => a.start - b.start);
+
+                        // Apply all highlights
+                        var highlightedText = "";
+                        var currentIndex = 0;
+                        highlights.forEach(function(highlight) {{
+                            highlightedText += formattedDNA.substring(currentIndex, highlight.start);
+                            highlightedText += `<span class="highlight" style="${{highlight.style}}">`;
+                            highlightedText += formattedDNA.substring(highlight.start, highlight.end + 1);
+                            highlightedText += `</span>`;
+                            currentIndex = highlight.end + 1;
+                        }});
+
+                        // Append any remaining text
+                        highlightedText += formattedDNA.substring(currentIndex);
+
+                        // Set the highlighted text in the right panel
                         var refDNA = document.getElementById('ref-dna');
                         refDNA.innerHTML = highlightedText;
 
-                        // Scroll to the highlighted part
+                        // Scroll to the first highlighted part (if any)
                         var highlightElement = refDNA.querySelector('.highlight');
                         if (highlightElement) {{
                             highlightElement.scrollIntoView({{
@@ -326,7 +377,7 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                         refDNA.innerHTML = 'Error loading DNA segment.';
                     }});
             }}
-
+            
             function isColorDark(color) {{
                 var r, g, b;
                 if (color.startsWith('#')) {{
@@ -371,6 +422,8 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 var [startStr, endStr] = position.split('-').map(s => s.trim());
                 var start = Number(startStr);
                 var end = Number(endStr);
+                var connectedNodes = network.getConnectedNodes(nodeId);
+                console.log('Connected nodes:', connectedNodes);
 
                 if (isNaN(start) || isNaN(end)) {{
                     console.error('Invalid start or end positions:', start, end);
@@ -380,7 +433,8 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 console.log('clickNode-> Parsed start:', start, 'Parsed end:', end);
 
                 var nodeColor = node.color;
-                highlightDNA(start, end, nodeColor);
+                highlightDNA(start, end, node.color, connectedNodes);
+
 
                 network.focus(nodeId, {{
                     scale: 1.5,
