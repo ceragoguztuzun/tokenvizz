@@ -3,6 +3,7 @@ from flask_cors import CORS
 import pysam
 import logging
 import os
+import argparse  # Import argparse
 
 app = Flask(__name__)
 CORS(app)  # Initialize CORS with default settings
@@ -10,8 +11,14 @@ CORS(app)  # Initialize CORS with default settings
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
+# Set up argument parsing
+parser = argparse.ArgumentParser(description='DNA Segment Server')
+parser.add_argument('--fasta', type=str,
+                    help='Path to the FASTA file')
+args = parser.parse_args()
+
 # Path to the FASTA file
-FASTA_FILE_PATH = '/usr/homes/cxo147/ceRAG_viz/data/hg38.fa'
+FASTA_FILE_PATH = args.fasta  # Use the argument value
 
 # Initialize the pysam FastaFile once to avoid reopening it on every request
 try:

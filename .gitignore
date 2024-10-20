@@ -5,6 +5,14 @@ __pycache__/
 
 # C extensions
 *.so
+*.npz
+*.json
+*.pot
+*.log
+*.fa 
+*.fai 
+*.txt 
+
 
 # Distribution / packaging
 .Python
@@ -164,4 +172,8 @@ cython_debug/
 # tokenviz
 .csv
 .fa
+.txt
+.fa.fai
+.fai
+.npz
 .json
