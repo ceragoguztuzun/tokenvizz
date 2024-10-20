@@ -5,6 +5,9 @@
 
 **Tokenvizz** is a simple yet powerful tool that allows you to visualize genomic sequences by converting them into tokens and displaying their relationships through attention graphs. This guide will help you set up the tool, process your data, and explore the interactive visualization in your web browser.
 
+https://github.com/user-attachments/assets/8e219afd-a471-4d28-b5ef-6f4e4f8d8c9b
+
+
 ## Overview
 
 To use DNA Tokenviz, you'll follow these main steps:
@@ -74,10 +77,11 @@ Run the following command after replacing the paths with the locations of your f
 ```bash
 python3 viz.py \
     --model_name "jaandoui/DNABERT2-AttentionExtracted" \
-    --edges_file "/path/to/your/adjacency_matrices/your_data_attention_graph.npz" \
-    --node_info_file "/path/to/your/node_info/your_data_node_info.json" \
+    --edges_file "/path/to/your/adjacency_matrices/{reference_name}_attention_graph.npz" \
+    --node_info_file "/path/to/your/node_info/{reference_name}_node_info.json" \
     --output_file "graph_visualization.html"
 ```
+`{reference_name}` is the name of the reference from the FASTA file you want to visualize interactively.
 
 #### 2. (Optional) Start the Flask Server for Text Highlights
 To enable text highlighting features in your visualization, run the `server.py` script with the `--fasta` argument.
@@ -123,8 +127,8 @@ This command starts a simple HTTP server on port `8000`.
 ### For `viz.py`
 
 -   `--model_name`: Pre-trained model name used earlier.
--   `--edges_file`: Path to the `.npz` file with adjacency matrices.
--   `--node_info_file`: Path to the `.json` file with node info.
+-   `--edges_file`: Path to the specific reference's `.npz` file with adjacency matrices.
+-   `--node_info_file`: Path to the specific reference's`.json` file with node info.
 -   `--output_file`: Name for your HTML visualization file (default: `"graph_vizzy.html"`).
 -   `--default_weight`: Edge weight threshold for visualization (default: `0.01`).
 
