@@ -47,9 +47,9 @@ def print_system_info():
 def setup_logging(log_dir=None):
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, 'main_mult.log')
+        log_path = os.path.join(log_dir, 'main.log')
     else:
-        log_path = 'main_mult.log'
+        log_path = 'main.log'
 
     logging.basicConfig(
         filename=log_path,
@@ -172,7 +172,7 @@ def create_graph(batch_token_positions, batch_attn_weights, threshold=0.01, pad_
         seq_len = len(node_ids)
         if seq_len == 0:
             logging.warning(f"Sample {i}: Sequence length is zero after excluding padding and [UNK], skipping graph creation.")
-            continue  # Skip this sample
+            continue  
 
         # Filter attention weights to exclude padding tokens
         attn_weights_filtered = [layer[:, valid_indices, :][:, :, valid_indices] for layer in attn_weights]
@@ -197,11 +197,11 @@ def create_graph(batch_token_positions, batch_attn_weights, threshold=0.01, pad_
 
         if valid_edges.shape[1] == 0:
             logging.warning(f"Sample {i}: No valid edges after thresholding.")
-            continue  # Skip this sample
+            continue  
 
         # Collect edges and weights
         for idx_i, idx_j, weight in zip(valid_edges[0], valid_edges[1], valid_weights):
-            node_i = int(node_ids[idx_i.item()])  # Convert to native Python int
+            node_i = int(node_ids[idx_i.item()])  
             node_j = int(node_ids[idx_j.item()])  # Convert to native Python int
             edges.append((node_i, node_j))
             weights.append(float(weight.item()))  # Ensure weight is a native Python float
@@ -270,7 +270,6 @@ class DNADataset(Dataset):
         # Return ref_name along with sequence and start
         return ref_name, sequence, start
 
-
     # Handle pickling by excluding non-picklable attributes
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -296,7 +295,7 @@ class DNABertModule(pl.LightningModule):
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         self.config = BertConfig.from_pretrained(model_name, return_dict=True)
         self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True, config=self.config)
-        self.max_seq_length = self.model.config.max_position_embeddings
+        self.max_seq_length = self.model.config.max_position_embeddings if self.model.config.max_position_embeddings else 512
 
     def predict_step(self, batch, batch_idx):
         ref_names, chunks, chunk_starts = batch
@@ -413,7 +412,7 @@ def main():
     parser.add_argument('--num_workers', type=int, default=4, help='Number of worker threads for DataLoader (default: 4)')
     parser.add_argument('--test_mode', action='store_true', help='Enable test mode with limited data processing')
     parser.add_argument('--max_chunks', type=int, default=100, help='Maximum number of chunks to process in test mode (default: 10)')
-    parser.add_argument('--limit_refs', type=int, default=2, help='Limit processing to the first N references (default: 2)')
+    parser.add_argument('--limit_refs', type=int, default=2, help='Limit processing to the first N references in test mode (default: 2)')
 
     parser.add_argument('--log_dir', type=str, default=None, help='Directory to save log files (default: current directory)')
     parser.add_argument('--enable_profiler', action='store_true', help='Enable PyTorch Profiler')
@@ -433,7 +432,7 @@ def main():
     num_workers = args.num_workers
     test_mode = args.test_mode
     max_chunks = args.max_chunks if test_mode else None
-    limit_refs = args.limit_refs
+    limit_refs = args.limit_refs if test_mode else None
     log_dir = args.log_dir
 
     # Setup logging
@@ -502,8 +501,8 @@ def main():
             per_ref_nodes[ref].update(unique_nodes)
 
     # Create directories for saving outputs
-    adj_matrix_dir = os.path.join(os.path.dirname(saved_matrix_fn), "adjacency_matrices")
-    node_info_dir = os.path.join(os.path.dirname(node_info_fn), "node_info")
+    adj_matrix_dir = os.path.join(os.path.dirname(saved_matrix_fn), "adjacency_matrices")#/NHEK_dev")
+    node_info_dir = os.path.join(os.path.dirname(node_info_fn), "node_info")#/NHEK_dev")
 
     os.makedirs(adj_matrix_dir, exist_ok=True)
     os.makedirs(node_info_dir, exist_ok=True)
@@ -665,7 +664,7 @@ def main():
         logging.info('Profiler summary saved to profiler_output.txt')
 
     logging.info("Script completed successfully.")
-    print(f"Script completed successfully. Threshold: {threshold}")
+    print(f"Script completed successfully. Threshold was: {threshold}")
 
 if __name__ == "__main__":
     main()

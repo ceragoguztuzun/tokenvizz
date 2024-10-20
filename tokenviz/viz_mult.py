@@ -1,6 +1,8 @@
 import json
 import csv
 import scipy.sparse as sp
+import os
+import argparse
 
 def read_edges_from_csv(file_path):
     edges = []
@@ -36,9 +38,24 @@ def read_node_info_from_json(file_path):
         node_info = json.load(f)
     return node_info
 
+def extract_reference_from_edges_file(edges_file):
+    # Extract the filename from the file path
+    filename = os.path.basename(edges_file)
+    
+    # Assuming the format is always {ref-name}_attention_graph.npz
+    reference = filename.split('_')[0]
+    
+    return reference
+
 def generate_graph_visualization(edges_file, node_info_file, output_file='graph_vizzy.html', default_weight=0.0):
     edges = read_edges_from_npz(edges_file)
     node_info = read_node_info_from_json(node_info_file)
+
+    # Extract the reference dynamically from the edges file
+    reference = extract_reference_from_edges_file(edges_file)
+
+    # Example model name, can be passed as a parameter if needed
+    model_name = 'jaandoui/DNABERT2-AttentionExtracted'
 
     # Include the 'color' and 'weighted_degree' fields for each node
     nodes = []
@@ -57,6 +74,13 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
     min_weight = default_weight
     max_weight = max(edge['weight'] for edge in edges) if edges else 0
 
+    # Insert model_name and reference into the HTML template
+        # Insert model_name and reference into the HTML template
+        # Insert model_name and reference into the HTML template
+        # Insert model_name and reference into the HTML template
+        # Insert model_name and reference into the HTML template
+        # Insert model_name and reference into the HTML template
+        # Insert model_name and reference into the HTML template
     html_template = f'''
     <!DOCTYPE html>
     <html lang="en">
@@ -90,6 +114,15 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
             }}
             .control-item {{
                 margin-left: 20px;
+            }}
+            .control-item label {{
+                font-weight: bold; /* Make labels bold */
+            }}
+            .control-item img {{
+                vertical-align: middle; /* Align image with text */
+                width: 24px; /* Set image width */
+                height: 16px; /* Set image height */
+                margin-right: 5px; /* Space between image and text */
             }}
             .container {{
                 display: flex;
@@ -127,7 +160,7 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 transition: all 0.3s ease-in-out;
             }}
             .highlight:hover {{
-                background-color: rgba(255, 255, 0, 0.6); /* Slightly lighter background color on hover */
+                background-color: rgba(255, 255, 0, 0.4); /* More transparent on hover */
                 box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.3); /* Add a subtle shadow to make it pop */
                 transform: scale(1.05); /* Slightly increase the size */
                 border-color: rgba(0, 0, 0, 0.8); /* Make the border a bit darker */
@@ -136,15 +169,12 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 width: 100%;
                 height: 80vh;
                 border: 1px solid lightgray;
+                background-color: white; /* Default background */
+                background-size: cover;
             }}
             #node-info {{
                 margin-top: 20px;
                 font-weight: bold;
-            }}
-            #change-background {{
-                position: fixed;
-                bottom: 20px;
-                right: 20px;
             }}
         </style>
     </head>
@@ -153,19 +183,14 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
             <h1>DNA Tokenviz</h1>
             <div class="controls">
                 <div class="control-item">
-                    <label for="tokenizer-select">Tokenizer: </label>
-                    <select id="tokenizer-select">
-                        <option value="tiktoken">TikToken</option>
-                        <option value="bpe">BPE</option>
-                        <option value="wordpiece">WordPiece</option>
-                    </select>
+                    <label for="ref-display">Reference: </label>
+                    <span id="ref-display">{reference}</span>
                 </div>
                 <div class="control-item">
-                    <label for="model-select">Model: </label>
-                    <select id="model-select">
-                        <option value="DNABERT2">DNABERT2</option>
-                        <option value="NT">NT</option>
-                    </select>
+                    <label for="model-display">
+                        <img src="hgface.png" alt="Model icon">Model: 
+                    </label>
+                    <span id="model-display">{model_name}</span>
                 </div>
                 <div class="control-item">
                     <label for="weight-slider">Edge Weight: </label>
@@ -187,22 +212,41 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 <div id="ref-dna"></div>
             </div>
         </div>
-        <button id="change-background">Galaxy Mode</button>
 
         <script>
+            // Define isColorDark function
+            function isColorDark(color) {{
+                var r, g, b;
+                if (color.startsWith('#')) {{
+                    // Convert hex to RGB
+                    var hex = color.substring(1);
+                    if (hex.length === 3) {{
+                        r = parseInt(hex[0] + hex[0], 16);
+                        g = parseInt(hex[1] + hex[1], 16);
+                        b = parseInt(hex[2] + hex[2], 16);
+                    }} else {{
+                        r = parseInt(hex.substring(0, 2), 16);
+                        g = parseInt(hex.substring(2, 4), 16);
+                        b = parseInt(hex.substring(4, 6), 16);
+                    }}
+                }} else {{
+                    return false; // Unsupported color format
+                }}
+                // Calculate brightness
+                var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                return brightness < 128; // Consider it dark if brightness is below 128
+            }}
+
+            // Function to convert hex color to rgba with transparency
             function hexToRgba(hex, alpha) {{
                 var r = 0, g = 0, b = 0;
-
-                // Remove '#' if present
                 hex = hex.replace('#', '');
 
                 if (hex.length === 3) {{
-                    // 3-digit hex
                     r = parseInt(hex[0] + hex[0], 16);
                     g = parseInt(hex[1] + hex[1], 16);
                     b = parseInt(hex[2] + hex[2], 16);
                 }} else if (hex.length === 6) {{
-                    // 6-digit hex
                     r = parseInt(hex.substring(0, 2), 16);
                     g = parseInt(hex.substring(2, 4), 16);
                     b = parseInt(hex.substring(4, 6), 16);
@@ -221,8 +265,6 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
             }});
 
             var nodes = new vis.DataSet(rawNodes);
-
-
             var edges = new vis.DataSet({json.dumps(edges)});
 
             var container = document.getElementById('mynetwork');
@@ -269,6 +311,7 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
 
             var network = new vis.Network(container, {{nodes: nodes, edges: edges}}, options);
 
+            // Filter edges based on edge weight
             function filterEdges(threshold) {{
                 var filteredEdges = edges.get().filter(function(edge) {{
                     return edge.weight >= threshold;
@@ -279,141 +322,20 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 }});
             }}
 
+            // Update the displayed weight when the slider is changed
             var slider = document.getElementById('weight-slider');
             var sliderValue = document.getElementById('slider-value');
-            slider.max = {max_weight};
-            slider.step = {max_weight} / 1000;
             slider.oninput = function() {{
                 var value = parseFloat(this.value).toFixed(3);
                 sliderValue.innerHTML = value;
                 filterEdges(parseFloat(value));
             }}
 
-            function highlightDNA(start, end, color, connectedNodes) {{
-                console.log(`highlightDNA-> Pos DNA from ${{start}} to ${{end}}`);
-                var segmentLength = 200;
-                var displayStart = Math.max(0, start - segmentLength);
-                var displayEnd = end + segmentLength;
-                console.log(`highlightDNA-> displaying from ${{displayStart}} to ${{displayEnd}}`);
-
-                fetch(`http://127.0.0.1:5000/get_dna_segment?start=${{displayStart}}&end=${{displayEnd}}`)
-                    .then(response => {{
-                        if (!response.ok) {{
-                            throw new Error(`Server error: ${{response.status}}`);
-                        }}
-                        return response.text();
-                    }})
-                    .then(dnaSegment => {{
-                        var formattedDNA = dnaSegment.replace(/(.{{50}})/g, `$1\n`);
-
-                        // Array to store all highlight information
-                        var highlights = [];
-
-                        // Add the clicked node's highlight
-                        var highlightStart = start - displayStart + 2; // Adjust to highlight correctly
-                        var highlightEnd = end - displayStart + 3;     // Adjust to include the full segment
-                        highlights.push({{
-                            start: highlightStart,
-                            end: highlightEnd,
-                            style: `background-color: ${{hexToRgba(color, 0.5)}}; border: 2px solid ${{hexToRgba(color, 0.7)}}; padding: 2px;`
-                        }});
-
-                        // Add highlights for connected nodes if they are within the displayed range
-                        connectedNodes.forEach(function(connectedNodeId) {{
-                            var connectedNode = nodes.get(connectedNodeId);
-                            var [connectedStartStr, connectedEndStr] = connectedNode.position.split('-').map(s => s.trim());
-                            var connectedStart = Number(connectedStartStr);
-                            var connectedEnd = Number(connectedEndStr);
-
-                            console.log('Checking if connected node is in range:', connectedStart, connectedEnd, 'within', displayStart, displayEnd);
-
-                            if (connectedStart >= displayStart && connectedEnd <= displayEnd) {{
-                                var connectedHighlightStart = connectedStart - displayStart + 2;
-                                var connectedHighlightEnd = connectedEnd - displayStart + 3;
-                                highlights.push({{
-                                    start: connectedHighlightStart,
-                                    end: connectedHighlightEnd,
-                                    style: `background-color: ${{hexToRgba(connectedNode.color, 0.3)}}; border: 2px solid ${{hexToRgba(connectedNode.color, 0.7)}}; padding: 2px;`
-                                }});
-
-                                console.log('Highlighting connected node:', connectedNode.label, 'from', connectedHighlightStart, 'to', connectedHighlightEnd);
-                            }}
-                        }});
-
-                        // Sort highlights by start index
-                        highlights.sort((a, b) => a.start - b.start);
-
-                        // Apply all highlights
-                        var highlightedText = "";
-                        var currentIndex = 0;
-                        highlights.forEach(function(highlight) {{
-                            highlightedText += formattedDNA.substring(currentIndex, highlight.start);
-                            highlightedText += `<span class="highlight" style="${{highlight.style}}">`;
-                            highlightedText += formattedDNA.substring(highlight.start, highlight.end + 1);
-                            highlightedText += `</span>`;
-                            currentIndex = highlight.end + 1;
-                        }});
-
-                        // Append any remaining text
-                        highlightedText += formattedDNA.substring(currentIndex);
-
-                        // Set the highlighted text in the right panel
-                        var refDNA = document.getElementById('ref-dna');
-                        refDNA.innerHTML = highlightedText;
-
-                        // Scroll to the first highlighted part (if any)
-                        var highlightElement = refDNA.querySelector('.highlight');
-                        if (highlightElement) {{
-                            highlightElement.scrollIntoView({{
-                                behavior: 'smooth',
-                                block: 'center',
-                                inline: 'center'
-                            }});
-                        }}
-                    }})
-                    .catch(error => {{
-                        console.error('Error fetching DNA segment:', error);
-                        var refDNA = document.getElementById('ref-dna');
-                        refDNA.innerHTML = 'Error loading DNA segment.';
-                    }});
-            }}
-            
-            function isColorDark(color) {{
-                var r, g, b;
-                if (color.startsWith('#')) {{
-                    // Convert hex to RGB
-                    var hex = color.substring(1);
-                    if (hex.length === 3) {{
-                        r = parseInt(hex[0] + hex[0], 16);
-                        g = parseInt(hex[1] + hex[1], 16);
-                        b = parseInt(hex[2] + hex[2], 16);
-                    }} else {{
-                        r = parseInt(hex.substring(0, 2), 16);
-                        g = parseInt(hex.substring(2, 4), 16);
-                        b = parseInt(hex.substring(4, 6), 16);
-                    }}
-                }} else {{
-                    return false; // Unsupported color format
-                }}
-                // Calculate brightness
-                var brightness = (r * 299 + g * 587 + b * 114) / 1000;
-                return brightness < 128; // Consider it dark if brightness is below 128
-                }}
-
-                nodes.forEach(function (node) {{
-                if (isColorDark(node.color)) {{
-                    node.font = {{ color: '#ffffff' }}; // Set font color to white for dark nodes
-                }}
-                }});
-            
             function clickNode(nodeId) {{
                 var node = nodes.get(nodeId);
-                console.log('clickNode-> Node clicked:', node);
                 document.getElementById('node-info').innerHTML = `Node: ${{node.label}}, Position: ${{node.position}}`;
 
                 var position = node.position;
-                console.log('clickNode-> Node position:', position);
-
                 if (!position || !position.includes('-')) {{
                     console.error('Invalid node position:', position);
                     return;
@@ -423,19 +345,13 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 var start = Number(startStr);
                 var end = Number(endStr);
                 var connectedNodes = network.getConnectedNodes(nodeId);
-                console.log('Connected nodes:', connectedNodes);
 
                 if (isNaN(start) || isNaN(end)) {{
                     console.error('Invalid start or end positions:', start, end);
                     return;
                 }}
 
-                console.log('clickNode-> Parsed start:', start, 'Parsed end:', end);
-
-                var nodeColor = node.color;
                 highlightDNA(start, end, node.color, connectedNodes);
-
-
                 network.focus(nodeId, {{
                     scale: 1.5,
                     animation: {{
@@ -452,25 +368,77 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 }}
             }});
 
-            var galaxyModeOn = false;
-            document.getElementById('change-background').addEventListener('click', function() {{
-                if (galaxyModeOn) {{
-                    container.style.backgroundImage = "none";
-                    galaxyModeOn = false;
-                }} else {{
-                    container.style.backgroundImage = "url('hxh.gif')";
-                    container.style.backgroundSize = "100% 100%";
-                    container.style.backgroundPosition = "center";
-                    container.style.backgroundRepeat = "no-repeat";
-                    galaxyModeOn = true;
-                }}
-            }});
+            function highlightDNA(start, end, color, connectedNodes) {{
+                var segmentLength = 200;
+                var displayStart = Math.max(0, start - segmentLength);
+                var displayEnd = end + segmentLength;
 
+                fetch(`http://127.0.0.1:5000/get_dna_segment?start=${{displayStart}}&end=${{displayEnd}}`)
+                    .then(response => response.text())
+                    .then(dnaSegment => {{
+                        var formattedDNA = dnaSegment.replace(/(.{{50}})/g, `$1\\n`);
+
+                        var highlights = [];
+                        var highlightStart = start - displayStart + 2;
+                        var highlightEnd = end - displayStart + 3;
+                        highlights.push({{
+                            start: highlightStart,
+                            end: highlightEnd,
+                            style: `background-color: ${{hexToRgba(color, 0.3)}}; padding: 2px;` /* Transparent version of node color */
+                        }});
+
+                        connectedNodes.forEach(function(connectedNodeId) {{
+                            var connectedNode = nodes.get(connectedNodeId);
+                            var [connectedStartStr, connectedEndStr] = connectedNode.position.split('-').map(s => s.trim());
+                            var connectedStart = Number(connectedStartStr);
+                            var connectedEnd = Number(connectedEndStr);
+
+                            if (connectedStart >= displayStart && connectedEnd <= displayEnd) {{
+                                var connectedHighlightStart = connectedStart - displayStart + 2;
+                                var connectedHighlightEnd = connectedEnd - displayStart + 2;
+                                highlights.push({{
+                                    start: connectedHighlightStart,
+                                    end: connectedHighlightEnd,
+                                    style: `background-color: ${{hexToRgba(connectedNode.color, 0.3)}}; padding: 2px;` /* Transparent version of connected node color */
+                                }});
+                            }}
+                        }});
+
+                        highlights.sort((a, b) => a.start - b.start);
+
+                        var highlightedText = "";
+                        var currentIndex = 0;
+                        highlights.forEach(function(highlight) {{
+                            highlightedText += formattedDNA.substring(currentIndex, highlight.start);
+                            highlightedText += `<span class="highlight" style="${{highlight.style}}">`;
+                            highlightedText += formattedDNA.substring(highlight.start, highlight.end + 1);
+                            highlightedText += `</span>`;
+                            currentIndex = highlight.end + 1;
+                        }});
+
+                        highlightedText += formattedDNA.substring(currentIndex);
+
+                        document.getElementById('ref-dna').innerHTML = highlightedText;
+                        var highlightElement = document.getElementById('ref-dna').querySelector('.highlight');
+                        if (highlightElement) {{
+                            highlightElement.scrollIntoView({{
+                                behavior: 'smooth',
+                                block: 'center',
+                                inline: 'center'
+                            }});
+                        }}
+                    }})
+                    .catch(error => {{
+                        document.getElementById('ref-dna').innerHTML = 'Error loading DNA segment.';
+                    }});
+            }}
+
+            // Position search functionality
             document.getElementById('search-button').addEventListener('click', function() {{
                 var position = parseInt(document.getElementById('position-search').value);
                 var foundNode = nodes.get().find(node => {{
                     var [start, end] = node.position.split('-').map(Number);
-                    return position >= start && position < end;
+                    return position >= start && position <= end;
                 }});
                 if (foundNode) {{
                     clickNode(foundNode.id);
@@ -479,16 +447,6 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
                 }}
             }});
 
-            // Add event listeners for new dropdowns
-            document.getElementById('tokenizer-select').addEventListener('change', function() {{
-                console.log('Tokenizer changed to:', this.value);
-                // Add logic to handle tokenizer change
-            }});
-
-            document.getElementById('model-select').addEventListener('change', function() {{
-                console.log('Model changed to:', this.value);
-                // Add logic to handle model change
-            }});
         </script>
     </body>
     </html>
@@ -499,8 +457,28 @@ def generate_graph_visualization(edges_file, node_info_file, output_file='graph_
 
     print(f"Graph visualization has been generated in '{output_file}'")
 
-# Example usage
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Generate DNA graph visualization")
+    parser.add_argument('--model_name', type=str, default='jaandoui/DNABERT2-AttentionExtracted',
+                        help='The name of the model to use (from huggingface)')
+    parser.add_argument('--edges_file', type=str, required=True,
+                        help='Path to the edges file (adjacency matrix in npz format)')
+    parser.add_argument('--node_info_file', type=str, required=True,
+                        help='Path to the node info file (node information in json format)')
+    parser.add_argument('--output_file', type=str, default='graph_vizzy.html',
+                        help='The output HTML file for the graph visualization')
+    parser.add_argument('--default_weight', type=float, default=0.01,
+                        help='The edge weight for the graph visualization (edge weight threshold you used when generating the graph)')
+    return parser.parse_args()
+
 if __name__ == "__main__":
-    edges_file = "/usr/homes/cxo147/ceRAG_viz/tokenviz/outputs/adjacency_matrices/chr1_attention_graph.npz"
-    node_info_file = "/usr/homes/cxo147/ceRAG_viz/tokenviz/outputs/node_info/chr1_node_info.json"
-    generate_graph_visualization(edges_file, node_info_file, output_file='graph_vizzy.html', default_weight=0.01)
+    args = parse_args()
+
+    # Pass the arguments to the generate_graph_visualization function
+    generate_graph_visualization(
+        edges_file=args.edges_file,
+        node_info_file=args.node_info_file,
+        output_file=args.output_file,
+        default_weight=args.default_weight
+    )
